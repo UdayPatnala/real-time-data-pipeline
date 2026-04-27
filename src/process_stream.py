@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
 import os
 import time
 
 import pandas as pd
 
 from config import POLL_INTERVAL_SECONDS
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
+logger = logging.getLogger(__name__)
 
 RAW_PATH = "data/raw_weather.csv"
 PROCESSED_PATH = "data/processed_weather.csv"
@@ -22,15 +26,16 @@ def compute_metrics(df: pd.DataFrame) -> pd.DataFrame:
     transformed = transformed.dropna(subset=["timestamp_utc"] + numeric_cols)
     transformed = transformed.sort_values("timestamp_utc")
 
-    transformed["temp_rolling_avg_5"] = transformed["temperature_c"].rolling(window=5, min_periods=1).mean()
-    transformed["humidity_rolling_avg_5"] = transformed["humidity_percent"].rolling(window=5, min_periods=1).mean()
+    transformed["temp_rolling_avg_5"] = transformed["temperature_c"].rolling(window=5, min_periods=1).mean().round(2)
+    transformed["humidity_rolling_avg_5"] = transformed["humidity_percent"].rolling(window=5, min_periods=1).mean().round(2)
+    transformed["wind_rolling_avg_5"] = transformed["wind_speed_kmh"].rolling(window=5, min_periods=1).mean().round(2)
 
     return transformed
 
 
 def main() -> None:
     os.makedirs("data", exist_ok=True)
-    print(f"Starting stream processor. Reading {RAW_PATH}")
+    logger.info("Starting stream processor. Reading %s", RAW_PATH)
 
     while True:
         try:
@@ -39,9 +44,9 @@ def main() -> None:
                 if not raw.empty:
                     processed = compute_metrics(raw)
                     processed.to_csv(PROCESSED_PATH, index=False)
-                    print(f"Processed {len(processed)} records")
+                    logger.info("Processed %d records", len(processed))
         except Exception as exc:  # noqa: BLE001
-            print("Processing failed:", exc)
+            logger.error("Processing failed: %s", exc)
 
         time.sleep(POLL_INTERVAL_SECONDS)
 

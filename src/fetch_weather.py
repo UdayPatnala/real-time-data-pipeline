@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+import logging
 import os
 import time
 from datetime import datetime, timezone
@@ -8,6 +9,9 @@ from datetime import datetime, timezone
 import requests
 
 from config import CITY_NAME, LATITUDE, LONGITUDE, POLL_INTERVAL_SECONDS
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s  %(levelname)s  %(message)s")
+logger = logging.getLogger(__name__)
 
 OUTPUT_PATH = "data/raw_weather.csv"
 API_URL = (
@@ -61,15 +65,20 @@ def append_row(path: str, row: dict) -> None:
 
 def main() -> None:
     ensure_file(OUTPUT_PATH)
-    print(f"Starting weather ingestion for {CITY_NAME}. Writing to {OUTPUT_PATH}")
+    logger.info("Starting weather ingestion for %s → %s", CITY_NAME, OUTPUT_PATH)
 
     while True:
         try:
             row = fetch_snapshot()
             append_row(OUTPUT_PATH, row)
-            print("Ingested:", row)
+            logger.info(
+                "Ingested: temp=%.1f°C  humidity=%s%%  wind=%.1f km/h",
+                row["temperature_c"],
+                row["humidity_percent"],
+                row["wind_speed_kmh"],
+            )
         except Exception as exc:  # noqa: BLE001
-            print("Fetch failed:", exc)
+            logger.error("Fetch failed: %s", exc)
         time.sleep(POLL_INTERVAL_SECONDS)
 
 
