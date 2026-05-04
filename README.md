@@ -1,101 +1,72 @@
-# Real-Time Weather Pipeline
+# SkyFlow: Real-Time Weather Data Pipeline
 
-A streaming-style data pipeline that continuously ingests live weather data from the Open-Meteo API, computes rolling metrics with Pandas, and visualizes trends in a self-refreshing Streamlit dashboard.
+SkyFlow is a professional-grade, end-to-end data pipeline designed to demonstrate real-time data ingestion, stream processing, and interactive visualization. It utilizes a modular architecture to fetch live weather data from the Open-Meteo API, process it using rolling window aggregations with Pandas, and serve insights via a premium Streamlit dashboard.
 
-## Tech Stack
+## 🏗️ Architecture
 
-- **Python 3.10+**
-- **Requests** — API data ingestion
-- **Pandas** — stream processing & rolling aggregations
-- **Streamlit + Plotly** — live dashboard
-- **Open-Meteo API** — free weather data (no API key needed)
+The project follows a decoupled producer-consumer pattern:
 
-## Architecture
+1.  **Ingestor**: Continuously polls the Open-Meteo API and appends raw data to an immutable storage (CSV).
+2.  **Processor**: Monitors the raw data stream, performs cleaning, and computes real-time metrics (e.g., 5-point rolling averages).
+3.  **Dashboard**: Provides a high-fidelity visual interface with auto-refreshing metrics and trend analysis.
 
-```
-  Open-Meteo API
-       │  every 20s
-       ▼
-  ┌──────────────────┐
-  │  fetch_weather.py │ ──▶  data/raw_weather.csv
-  └──────────────────┘
-                                   │
-                                   ▼
-                         ┌────────────────────┐
-                         │ process_stream.py   │ ──▶ data/processed_weather.csv
-                         │ (rolling averages)  │
-                         └────────────────────┘
-                                   │
-                                   ▼
-                         ┌────────────────────┐
-                         │   dashboard.py      │
-                         │  (Streamlit live)   │
-                         └────────────────────┘
-```
+## 🚀 Features
 
-## Setup & Run
+-   **Modular Design**: Clean separation of concerns (Ingestor, Processor, Dashboard).
+-   **Robust Logging**: Structured logging for observability across all components.
+-   **Environment Driven**: Configuration via `.env` for security and flexibility.
+-   **Premium Visualization**: Interactive Plotly charts and custom-styled Streamlit UI.
+-   **Type Safety**: Comprehensive use of Python type hints and dataclasses.
 
+## 🛠️ Tech Stack
+
+-   **Language**: Python 3.10+
+-   **Data Ingestion**: Requests, Open-Meteo API
+-   **Stream Processing**: Pandas (Rolling Windows)
+-   **Visualization**: Streamlit, Plotly
+-   **Configuration**: Dotenv
+
+## 🚦 Getting Started
+
+### 1. Setup Environment
 ```bash
 pip install -r requirements.txt
+cp .env.example .env
 ```
 
-Open **three terminals** and run:
+### 2. Run the Pipeline
+Open three separate terminals to simulate the distributed nature of the pipeline:
 
 ```bash
-# Terminal 1 — Ingestion
-python src/fetch_weather.py
+# Terminal 1: Data Ingestion
+python main.py ingest
 
-# Terminal 2 — Processing
-python src/process_stream.py
+# Terminal 2: Stream Processing
+python main.py process
 
-# Terminal 3 — Dashboard
-streamlit run dashboard.py
+# Terminal 3: Live Dashboard
+streamlit run dashboard/app.py
 ```
 
-The dashboard auto-refreshes every 20 seconds.
-
-## Configuration
-
-Edit `src/config.py` to change the target city:
-
-```python
-CITY_NAME = "Bengaluru"
-LATITUDE = 12.9716
-LONGITUDE = 77.5946
-POLL_INTERVAL_SECONDS = 20
+## 🧪 Testing
+Run unit tests to ensure processing logic integrity:
+```bash
+python -m unittest discover tests
 ```
 
-## Metrics Computed
-
-| Metric | Description |
-|--------|-------------|
-| `temperature_c` | Current temperature in Celsius |
-| `humidity_percent` | Relative humidity % |
-| `wind_speed_kmh` | Wind speed in km/h |
-| `temp_rolling_avg_5` | 5-point rolling average of temperature |
-| `humidity_rolling_avg_5` | 5-point rolling average of humidity |
-| `wind_rolling_avg_5` | 5-point rolling average of wind speed |
-
-## Project Structure
-
-```
-├── src/
-│   ├── config.py               # City coordinates & poll interval
-│   ├── fetch_weather.py        # Continuous API ingestion loop
-│   └── process_stream.py       # Rolling metric computation
-├── data/                        # CSV files (generated at runtime)
-├── dashboard.py                # Streamlit live dashboard
-├── requirements.txt
-└── README.md
+## 📂 Project Structure
+```text
+├── pipeline/             # Core logic package
+│   ├── config.py         # Environment-based settings
+│   ├── ingestor.py       # Data extraction logic
+│   ├── processor.py      # Transformation & metrics
+│   └── utils/            # Shared utilities (logging)
+├── dashboard/            # Streamlit application
+├── tests/                # Unit test suite
+├── main.py               # Unified CLI entry point
+├── requirements.txt      # Dependency manifest
+└── .env.example          # Environment template
 ```
 
-## Key Concepts
-
-- **Continuous ingestion loop** with error recovery
-- **Near real-time transformation** on append-only CSV
-- **Rolling window aggregations** for trend smoothing
-- **Live dashboard** with auto-refresh (no manual reload)
-
-## License
-
+## 📝 License
 MIT
