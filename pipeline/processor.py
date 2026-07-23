@@ -1,28 +1,45 @@
 import os
+import threading
+import time
 import pandas as pd
 from typing import Optional
 
 from pipeline.config import config
+from pipeline.ingestor import _INGEST_LOCK
 from pipeline.utils.logger import setup_logger
 
 logger = setup_logger("Processor")
 
+_PROCESS_LOCK = threading.RLock()
+
+
 class StreamProcessor:
-    """Handles the transformation and metric computation of weather data."""
-    
-    def __init__(self):
-        self.raw_path = config.RAW_DATA_PATH
-        self.processed_path = config.PROCESSED_DATA_PATH
+    """Handles transformation and metric computation of weather data with thread safety and atomic output writes."""
 
-    def process(self) -> Optional[pd.DataFrame]:
-        """Reads raw data, computes rolling metrics, and saves the result."""
-        if not os.path.exists(self.raw_path):
-            logger.warning("Raw data file not found. Skipping processing.")
-            return None
+    def __init__(self, raw_path: Optional[str] = None, processed_path: Optional[str] = None):
+        self.raw_path = raw_path or config.RAW_DATA_PATH
+        self.processed_path = processed_path or config.PROCESSED_DATA_PATH
 
-        try:
-            df = pd.read_csv(self.raw_path)
-            if df.empty:
+    def process(self, max_retries: int = 5, retry_delay: float = 0.05) -> Optional[pd.DataFrame]:
+        """Reads raw data, computes rolling metrics, and atomically saves the result."""
+        with _PROCESS_LOCK, _INGEST_LOCK:
+            if not os.path.exists(self.raw_path):
+                logger.warning(f"Raw data file not found at {self.raw_path}. Skipping processing.")
+                return None
+
+            df = None
+            for attempt in range(max_retries):
+                try:
+                    df = pd.read_csv(self.raw_path)
+                    break
+                except (PermissionError, OSError, pd.errors.EmptyDataError) as e:
+                    if attempt < max_retries - 1:
+                        time.sleep(retry_delay)
+                    else:
+                        logger.error(f"Failed to read raw data from {self.raw_path}: {e}")
+                        return None
+
+            if df is None or df.empty:
                 return None
 
             # Type conversion and cleaning
@@ -32,22 +49,43 @@ class StreamProcessor:
                 df[col] = pd.to_numeric(df[col], errors="coerce")
 
             df = df.dropna(subset=["timestamp_utc"] + numeric_cols)
+            if df.empty:
+                return None
+
             df = df.sort_values("timestamp_utc")
 
             # Rolling window computations (5-point average)
             window_size = 5
-            df["temp_rolling_avg"] = df["temperature_c"].rolling(window=window_size, min_periods=1).mean().round(2)
-            df["humidity_rolling_avg"] = df["humidity_percent"].rolling(window=window_size, min_periods=1).mean().round(2)
-            df["wind_rolling_avg"] = df["wind_speed_kmh"].rolling(window=window_size, min_periods=1).mean().round(2)
+            df["temp_rolling_avg"] = (
+                df["temperature_c"].rolling(window=window_size, min_periods=1).mean().round(2)
+            )
+            df["humidity_rolling_avg"] = (
+                df["humidity_percent"].rolling(window=window_size, min_periods=1).mean().round(2)
+            )
+            df["wind_rolling_avg"] = (
+                df["wind_speed_kmh"].rolling(window=window_size, min_periods=1).mean().round(2)
+            )
 
-            # Save processed data
-            df.to_csv(self.processed_path, index=False)
-            logger.info(f"Processed {len(df)} records and updated {self.processed_path}")
-            return df
+            # Save processed data atomically using a temporary file
+            proc_dir = os.path.dirname(self.processed_path) or "."
+            os.makedirs(proc_dir, exist_ok=True)
+            temp_path = os.path.join(
+                proc_dir, f".tmp_proc_{os.getpid()}_{threading.get_ident()}.csv"
+            )
 
-        except Exception as e:
-            logger.error(f"Processing failed: {e}")
-            return None
+            try:
+                df.to_csv(temp_path, index=False)
+                os.replace(temp_path, self.processed_path)
+                logger.info(f"Processed {len(df)} records and updated {self.processed_path}")
+                return df
+            except Exception as e:
+                if os.path.exists(temp_path):
+                    try:
+                        os.remove(temp_path)
+                    except OSError:
+                        pass
+                logger.error(f"Failed to save processed file to {self.processed_path}: {e}")
+                return None
 
     def run_once(self) -> None:
         """Executes a single processing cycle."""
